@@ -5,14 +5,24 @@ var fs = require('fs');
 
 
 const START_URL = "https://www.warhammer-community.com/2019/04/16/the-rumour-engine-tuesday-16th-april/" //"https://www.warhammer-community.com/?s=Rumour";
-const MAX_PAGES_TO_VISIT = 10;
+const MAX_PAGES_TO_VISIT = 1000;
 
 var pagesVisited = {};
 var numPagesVisited = 0;
 var pagesToVisit = [];
 var url = new URL(START_URL);
 var baseUrl = url.protocol + "//" + url.hostname;
-var rumourImages = [];
+var rumourImages = {};
+
+process.on('SIGINT', function () {
+    console.log('execution interrupted');
+    saveResults()
+    .then(() => {
+        process.exit(0);    
+    }).catch((e) => {
+        // process.exit(0);        
+    });
+});
 
 async function crawl() {
     pagesToVisit.push(START_URL);
@@ -30,11 +40,6 @@ async function crawl() {
                 break;
             }
 
-            if (nextPage in pagesVisited) {
-                // We've already visited this page, so repeat the crawl
-                continue;
-            }
-
             if (nextPage.includes('.pdf')) {
                 // don't look at all the pdfs on the website
                 continue;
@@ -46,7 +51,7 @@ async function crawl() {
     } catch (e) {
         console.error('an error occured while crawling', e);
     } finally {
-        saveResults();    
+        await saveResults();    
     }    
 }
 
@@ -101,25 +106,30 @@ function collectInternalLinks($) {
     console.log("Found " + relativeLinks.length + " links on page");
     // console.log(relativeLinks);
     relativeLinks.each(function() {
-        // console.log('url add', $(this).attr('href'));
-        pagesToVisit.push($(this).attr('href'));
+        let page = $(this).attr('href')
+        if (!(page in pagesVisited)) {
+            pagesToVisit.push(page);
+        }
     });
 }
 
-function saveResults() {
-    var timestamp = new Date().toISOString();
-    var filePath = `results/${timestamp}.txt`
-    // create results string
-    resultString = '';
-    rumourImages.forEach(function(imageUrl) {
-        resultString += imageUrl + '\n';
-    });
+async function saveResults() {
+    return new Promise((resolve, reject) => {
+        let timestamp = new Date().toISOString();
+        let filePath = `results/${timestamp}.txt`
+        // create results string
+        let resultString = '';
+        rumourImages.forEach(function(imageUrl) {
+            resultString += imageUrl + '\n';
+        });
 
-    fs.appendFile(filePath, resultString, function(err) {
-        if(err) {
-            return console.log(err);
-        }
-        console.log("Results were saved:", filePath);
+        fs.appendFile(filePath, resultString, (err) => {
+            if(err) {
+                reject(err);
+            }
+            console.log("Results were saved:", filePath);
+            resolve();
+        });
     });
 }
 
