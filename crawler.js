@@ -4,9 +4,8 @@ var URL = require('url-parse');
 var fs = require('fs');
 
 
-var START_URL = "https://www.warhammer-community.com/2019/04/16/the-rumour-engine-tuesday-16th-april/" //"https://www.warhammer-community.com/?s=Rumour";
-var SEARCH_WORD = "rumour";
-var MAX_PAGES_TO_VISIT = 100;
+const START_URL = "https://www.warhammer-community.com/2019/04/16/the-rumour-engine-tuesday-16th-april/" //"https://www.warhammer-community.com/?s=Rumour";
+const MAX_PAGES_TO_VISIT = 10;
 
 var pagesVisited = {};
 var numPagesVisited = 0;
@@ -15,42 +14,45 @@ var url = new URL(START_URL);
 var baseUrl = url.protocol + "//" + url.hostname;
 var rumourImages = [];
 
-pagesToVisit.push(START_URL);
-crawl();
-saveResults();
+async function crawl() {
+    pagesToVisit.push(START_URL);
+    try {
+        while (true) {
+            if(numPagesVisited >= MAX_PAGES_TO_VISIT) {
+                console.log("Reached max limit of number of pages to visit.");
+                break;
+            }
+            let nextPage = pagesToVisit.pop();
 
-function async crawl() {
-    while (true) {
-        if(numPagesVisited >= MAX_PAGES_TO_VISIT) {
-            console.log("Reached max limit of number of pages to visit.");
-            break;
+            if (!nextPage) {
+                // we are done
+                console.log('no more pages to visit');
+                break;
+            }
+
+            if (nextPage in pagesVisited) {
+                // We've already visited this page, so repeat the crawl
+                continue;
+            }
+
+            if (nextPage.includes('.pdf')) {
+                // don't look at all the pdfs on the website
+                continue;
+            }
+
+            // New page we haven't visited
+            await visitPage(nextPage);
         }
-        var nextPage = pagesToVisit.pop();
-
-        if (!nextPage) {
-            // we are done
-            console.log('no more pages to visit');
-            break;
-        }
-
-        if (nextPage in pagesVisited) {
-            // We've already visited this page, so repeat the crawl
-            continue;
-        }
-
-        if (nextPage.includes('.pdf')) {
-            // don't look at all the pdfs on the website
-            continue;
-        }
-
-        // New page we haven't visited
-        await visitPage(nextPage);
-    }
+    } catch (e) {
+        console.error('an error occured while crawling', e);
+    } finally {
+        saveResults();    
+    }    
 }
 
 
 
-function async visitPage(url) {
+async function visitPage(url) {
     // Add page to our set
     pagesVisited[url] = true;
     numPagesVisited++;
@@ -65,20 +67,18 @@ function async visitPage(url) {
             return cheerio.load(body);
         }
     };
-    return request(options)
-    .then(($) => {
-        var rumourImage = checkForRumourImage($);
+    try {
+        let $ = await request(options);
+        let rumourImage = checkForRumourImage($);
         if(rumourImage) {
             console.log('Rumour Image found:' + rumourImage);
             rumourImages.push(rumourImage);
         }
-
         collectInternalLinks($);
-        // In this short program, our callback is just calling crawl()
-        callback();
-    }).catch((err) => {
+
+    } catch (err) {
         console.error('error getting page', err);
-    });
+    }
 }
 
 function searchForWord($, word) {
@@ -87,8 +87,7 @@ function searchForWord($, word) {
 }
 
 function checkForRumourImage($) {
-    var rumourImage = $("img[src*=RumourEngine]");
-    debugger;
+    let rumourImage = $("img[src*=RumourEngine]");
     if (rumourImage.length) {
         return rumourImage[0].attribs.src;
     }
@@ -108,17 +107,21 @@ function collectInternalLinks($) {
 }
 
 function saveResults() {
-    var timestamp = new Date().getTime();
+    var timestamp = new Date().toISOString();
+    var filePath = `results/${timestamp}.txt`
     // create results string
     resultString = '';
     rumourImages.forEach(function(imageUrl) {
         resultString += imageUrl + '\n';
     });
 
-    fs.appendFile(`results/${timestamp}.txt`, resultString, function(err) {
+    fs.appendFile(filePath, resultString, function(err) {
         if(err) {
             return console.log(err);
         }
-        console.log("Results were saved");
+        console.log("Results were saved:", filePath);
     });
 }
+
+crawl();
+
